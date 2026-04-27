@@ -11,6 +11,8 @@ ApiBump detects semantic public API changes and recommends the correct SemVer bu
 
 ![Real ApiBump PR comment screenshot](docs/demo/pr-comment.png)
 
+Real-repo dogfood report: [April 27, 2026](docs/dogfood/2026-04-27-real-repos.md)
+
 ## Quick Start
 
 Add this to a Python library repo:
