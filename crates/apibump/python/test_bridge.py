@@ -36,13 +36,16 @@ def main() -> None:
         root = Path(temp_dir)
         package_dir = root / "src" / "demo_pkg"
         package_dir.mkdir(parents=True)
-        (package_dir / "__init__.py").write_text("from .api import public_fn as public_fn\n")
+        (package_dir / "__init__.py").write_text(
+            "from __future__ import annotations\nfrom .api import public_fn as public_fn\n"
+        )
         (package_dir / "api.py").write_text("def public_fn() -> None:\n    return None\n")
 
         module = griffe.load("demo_pkg", search_paths=[str(root / "src")], resolve_aliases=True)
         snapshot = bridge.snapshot_public_api(module)
 
         assert any(item["path"] == "demo_pkg.public_fn" for item in snapshot)
+        assert not any(item["path"] == "demo_pkg.annotations" for item in snapshot)
 
 
 if __name__ == "__main__":

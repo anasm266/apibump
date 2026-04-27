@@ -114,7 +114,7 @@ def snapshot_public_api(root: Any) -> list[dict[str, Any]]:
 def normalize_symbol(obj: Any, parent_kind: str) -> dict[str, Any]:
     kind = symbol_kind(obj, parent_kind)
     path = getattr(obj, "path", "<unknown>")
-    canonical_path = getattr(obj, "canonical_path", None) or path
+    canonical_path = canonical_path_for(obj, path)
     return {
         "path": path,
         "parent_path": getattr(getattr(obj, "parent", None), "path", "") or "",
@@ -132,6 +132,11 @@ def is_public_member(obj: Any, parent_kind: str) -> bool:
     if exports is not None:
         return name in exports
 
+    if is_future_alias(obj):
+        return False
+    if parent_kind == "module" and getattr(obj, "is_alias", False) and not is_local_alias(obj):
+        return False
+
     if parent_kind == "class":
         return not name.startswith("_") or is_dunder(name)
 
@@ -148,6 +153,40 @@ def member_name(obj: Any) -> str:
 
 def is_dunder(name: str) -> bool:
     return len(name) > 4 and name.startswith("__") and name.endswith("__")
+
+
+def canonical_path_for(obj: Any, path: str) -> str:
+    if getattr(obj, "is_alias", False):
+        target_path = getattr(obj, "target_path", None)
+        if target_path:
+            return str(target_path)
+
+    try:
+        canonical_path = getattr(obj, "canonical_path", None)
+    except Exception:
+        canonical_path = None
+    return str(canonical_path or path)
+
+
+def is_future_alias(obj: Any) -> bool:
+    if not getattr(obj, "is_alias", False):
+        return False
+
+    target_path = getattr(obj, "target_path", "") or ""
+    return str(target_path).startswith("__future__.")
+
+
+def is_local_alias(obj: Any) -> bool:
+    if not getattr(obj, "is_alias", False):
+        return True
+
+    path = str(getattr(obj, "path", ""))
+    target_path = str(getattr(obj, "target_path", "") or "")
+    if "." not in path or not target_path:
+        return False
+
+    package_root = path.split(".", 1)[0]
+    return target_path == package_root or target_path.startswith(f"{package_root}.")
 
 
 def symbol_kind(obj: Any, parent_kind: str) -> str:
