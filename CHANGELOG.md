@@ -1,5 +1,10 @@
 # Changelog
 
+## v0.2.4
+
+- Ignore non-package import aliases such as `__future__.annotations` and stdlib imports when deriving the public API snapshot for modules without `__all__`.
+- Keep package-root re-exports inside the same package visible so removed exports still surface as public API changes.
+
 ## v0.2.3
 
 - Treat package-root imported aliases according to ApiBump's own public API rules when `__all__` is absent.
