@@ -8,21 +8,21 @@ branding:
 
 inputs:
   language:
-    description: Language backend to run. V1 supports python.
+    description: "Language backend to run. V1 supports python."
     required: false
     default: python
   package:
-    description: Python package/module name to check.
+    description: "Python package/module name to check."
     required: true
   search:
-    description: Search path passed to Griffe, usually src or .
+    description: "Search path passed to Griffe, usually src or ."
     required: false
     default: "."
   base:
-    description: Older git ref to compare from.
+    description: "Older git ref to compare from."
     required: true
   head:
-    description: Newer git ref to compare to.
+    description: "Newer git ref to compare to."
     required: false
     default: HEAD
   fail-on:
@@ -30,40 +30,40 @@ inputs:
     required: false
     default: breaking
   comment:
-    description: Post or update a sticky PR comment.
+    description: "Post or update a sticky PR comment."
     required: false
     default: "true"
   github-token:
-    description: Token used for PR comments.
+    description: "Token used for PR comments."
     required: false
     default: ""
   format:
-    description: Log output format: human, json, markdown, or github.
+    description: "Log output format: human, json, markdown, or github."
     required: false
     default: github
   version:
-    description: ApiBump release version to download.
+    description: "ApiBump release version to download."
     required: false
     default: v0.1.0
 
 outputs:
   recommendation:
-    description: Recommended SemVer bump.
+    description: "Recommended SemVer bump."
     value: ${{ steps.run.outputs.recommendation }}
   breaking:
-    description: Number of breaking changes.
+    description: "Number of breaking changes."
     value: ${{ steps.run.outputs.breaking }}
   unknown:
-    description: Number of unknown changes.
+    description: "Number of unknown changes."
     value: ${{ steps.run.outputs.unknown }}
   json-file:
-    description: Path to the JSON report on the runner.
+    description: "Path to the JSON report on the runner."
     value: ${{ steps.run.outputs.json_file }}
   markdown-file:
-    description: Path to the Markdown report on the runner.
+    description: "Path to the Markdown report on the runner."
     value: ${{ steps.run.outputs.markdown_file }}
   exit-code:
-    description: ApiBump CLI exit code after applying the failure policy.
+    description: "ApiBump CLI exit code after applying the failure policy."
     value: ${{ steps.run.outputs.exit_code }}
 
 runs:
