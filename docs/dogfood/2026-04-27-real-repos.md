@@ -4,44 +4,39 @@ This run used four public Python libraries in forks under `anasm266` with draft 
 
 ## Scope
 
-Initial `v0.2.1` dogfood exposed two blockers before the PR runs:
+This dogfood pass happened in two stages:
 
-- The Windows CLI passed refs like `origin/main` through to Griffe, which broke Griffe worktree temp paths on Windows.
-- Zero-config autodetect missed real package layouts in `PyJWT` and `tomlkit`.
+- `v0.2.1` exposed setup blockers before the PR runs:
+  - the Windows CLI passed refs like `origin/main` through to Griffe
+  - zero-config autodetect missed real package layouts in `PyJWT` and `tomlkit`
+- `v0.2.2` made the first real PR runs possible, but exposed two accuracy issues:
+  - package-root re-export removals were missed
+  - duplicate `unknown` signature changes were emitted next to a real breaking change
 
-Both blockers were fixed in `v0.2.2` before opening the draft PRs below.
+Those accuracy issues were fixed in `v0.2.4`, and the fork PRs below were rerun against `anasm266/apibump@v1` after moving `v1` to the `v0.2.4` release.
 
 ## Final Results
 
 | Repo | Intentional change | Expected | ApiBump result | Notes | PR |
 | --- | --- | --- | --- | --- | --- |
-| `itsdangerous` | Remove the package-root export `base64_decode` | `major` | `patch` | False negative. ApiBump treated an implicit package re-export removal as `internal_only`. | [anasm266/itsdangerous#1](https://github.com/anasm266/itsdangerous/pull/1) |
+| `itsdangerous` | Remove the package-root export `base64_decode` | `major` | `major` | Correct after the `v0.2.4` rerun. Reported as `object_removed` on `itsdangerous.base64_decode`. | [anasm266/itsdangerous#1](https://github.com/anasm266/itsdangerous/pull/1) |
 | `pyjwt` | Add `jwt.get_version()` at the package root | `minor` | `minor` | Correct. Zero-config autodetect resolved `jwt` even though the distribution name is `PyJWT`. | [anasm266/pyjwt#1](https://github.com/anasm266/pyjwt/pull/1) |
 | `referencing` | Add a private `_DOGFOOD_TOKEN` in `_core.py` | `patch` | `patch` | Correct. Classified as `internal_only`. | [anasm266/referencing#1](https://github.com/anasm266/referencing/pull/1) |
-| `tomlkit` | Add a required `mode` parameter to `tomlkit.parse()` | `major` | `major` | Correct major recommendation, but noisy. ApiBump also emitted two extra `unknown` `signature_changed` entries for the same change. | [anasm266/tomlkit#1](https://github.com/anasm266/tomlkit/pull/1) |
+| `tomlkit` | Add a required `mode` parameter to `tomlkit.parse()` | `major` | `major` | Correct after the `v0.2.4` rerun. The duplicate `unknown` signature changes are gone. | [anasm266/tomlkit#1](https://github.com/anasm266/tomlkit/pull/1) |
 
 ## What Worked
 
-- The released `v0.2.2` Windows CLI ran successfully against real git histories after resolving refs to commit IDs first.
+- The released Windows CLI now runs successfully against real git histories after resolving refs to commit IDs first.
 - The GitHub Action posted sticky PR comments correctly on all four fork PRs.
 - Zero-config autodetect now works on:
   - `src/` layout packages like `itsdangerous`
   - flat-layout packages like `referencing`
   - `tool.poetry` projects like `tomlkit`
   - repos where the import package and distribution name differ, like `PyJWT` -> `jwt`
-- Real additive, internal-only, and required-parameter breaking changes were all detected at least once.
-
-## What Still Needs Work
-
-- Package-root implicit re-exports are under-modeled.
-  - Removing `itsdangerous.base64_decode` from `src/itsdangerous/__init__.py` should have been a breaking public API removal.
-- Signature-change deduplication is too noisy.
-  - `tomlkit` correctly produced `parameter_added_required`, but ApiBump also reported two extra `unknown` signature changes on the underlying function and its alias.
+- Real additive, internal-only, removed-export, and required-parameter breaking changes were all detected at least once.
 
 ## Takeaways
 
-- The release binary, zero-config discovery, and PR comment workflow are credible enough for more dogfooding.
-- The main adoption risk is accuracy, not setup friction.
-- The next high-value fixes are:
-  - model package-root re-export removals as public API surface
-  - suppress duplicate `unknown` signature changes when a stronger breaking result already exists
+- The release binary, zero-config discovery, and PR comment workflow all survived a real-repo pass on four public Python libraries.
+- Setup friction is much better than it was at the start of the day.
+- Accuracy is materially better after the `v0.2.4` rerun, but broader trust still depends on repeating this exercise on more real repositories.
