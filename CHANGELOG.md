@@ -1,5 +1,11 @@
 # Changelog
 
+## v0.2.3
+
+- Treat package-root imported aliases according to ApiBump's own public API rules when `__all__` is absent.
+- Emit breaking `object_removed` changes for removed public snapshot symbols that are not already covered by a stronger backend breakage.
+- Suppress duplicate unknown signature-change findings when an exact or canonical public symbol is already covered by a breaking change.
+
 ## v0.2.2
 
 - Resolve Git refs to commit IDs before calling Griffe so local Windows runs do not trip over branch names like `origin/main`.
