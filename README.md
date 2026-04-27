@@ -9,7 +9,7 @@ Know whether a pull request requires a major version bump before merging.
 
 ApiBump detects semantic public API changes and recommends the correct SemVer bump. V1 is intentionally focused: a Rust CLI, a GitHub Action, and a Python backend powered by [Griffe](https://mkdocstrings.github.io/griffe/).
 
-![ApiBump PR comment demo](docs/demo/pr-comment.svg)
+![Real ApiBump PR comment screenshot](docs/demo/pr-comment.png)
 
 ## Quick Start
 
