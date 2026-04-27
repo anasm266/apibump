@@ -7,6 +7,11 @@ repository.workspace = true
 homepage.workspace = true
 description = "Detect semantic public API changes and recommend SemVer bumps."
 readme = "../../README.md"
+keywords = ["api", "semver", "breaking-change", "github-action", "python"]
+categories = ["command-line-utilities", "development-tools"]
+
+[package.metadata.docs.rs]
+all-features = true
 
 [dependencies]
 anyhow = "1.0"
@@ -18,4 +23,3 @@ thiserror = "2.0"
 
 [dev-dependencies]
 pretty_assertions = "1.4"
-

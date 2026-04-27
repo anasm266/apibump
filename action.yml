@@ -2,6 +2,10 @@ name: ApiBump
 description: Detect public API breakages and recommend SemVer bumps.
 author: ApiBump
 
+branding:
+  icon: shield
+  color: orange
+
 inputs:
   language:
     description: Language backend to run. V1 supports python.

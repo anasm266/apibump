@@ -1,0 +1,30 @@
+name: Feature request
+description: Suggest a focused improvement.
+title: "Feature: "
+labels: ["enhancement"]
+body:
+  - type: textarea
+    id: use-case
+    attributes:
+      label: Use case
+      description: What workflow would this unlock or improve?
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed behavior
+      description: Describe the interface or output you would expect.
+    validations:
+      required: true
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      options:
+        - GitHub Action
+        - CLI
+        - Python backend
+        - New language backend
+        - Documentation
+
