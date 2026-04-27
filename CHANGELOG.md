@@ -1,5 +1,10 @@
 # Changelog
 
+## v0.2.2
+
+- Resolve Git refs to commit IDs before calling Griffe so local Windows runs do not trip over branch names like `origin/main`.
+- Widen Python autodetection to handle `tool.poetry` projects and single-package repos whose import package does not match the distribution name.
+
 ## v0.2.1
 
 - Fix Python bridge symbol kind normalization for real Griffe output.
