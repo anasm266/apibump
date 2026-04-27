@@ -1,4 +1,5 @@
 use std::{
+    collections::BTreeSet,
     fs,
     path::{Path, PathBuf},
     process::Command,
@@ -28,6 +29,7 @@ pub enum PackageDetection {
 #[derive(Debug, Deserialize)]
 struct PyProject {
     project: Option<PyProjectProject>,
+    tool: Option<PyProjectTool>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -35,6 +37,27 @@ struct PyProjectProject {
     name: Option<String>,
     #[serde(rename = "import-names")]
     import_names: Option<Vec<String>>,
+}
+
+#[derive(Debug, Deserialize)]
+struct PyProjectTool {
+    poetry: Option<PyProjectPoetry>,
+    flit: Option<PyProjectFlit>,
+}
+
+#[derive(Debug, Deserialize)]
+struct PyProjectPoetry {
+    name: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+struct PyProjectFlit {
+    module: Option<PyProjectFlitModule>,
+}
+
+#[derive(Debug, Deserialize)]
+struct PyProjectFlitModule {
+    name: Option<String>,
 }
 
 pub fn discover_python_packages(repo: &Path) -> anyhow::Result<Vec<DiscoveredPackage>> {
@@ -55,13 +78,18 @@ pub fn discover_python_packages(repo: &Path) -> anyhow::Result<Vec<DiscoveredPac
             .with_context(|| format!("failed to read {}", manifest_path.display()))?;
         let pyproject: PyProject = toml::from_str(&contents)
             .with_context(|| format!("failed to parse {}", manifest_path.display()))?;
-        let Some(project) = pyproject.project else {
-            continue;
-        };
-
-        for import_name in project_import_names(project) {
+        let mut resolved = false;
+        for import_name in pyproject_import_names(&pyproject) {
             if let Some(package) =
                 resolve_candidate(repo, manifest_path, manifest_dir, &import_name)?
+            {
+                packages.push(package);
+                resolved = true;
+            }
+        }
+
+        if !resolved {
+            if let Some(package) = infer_single_layout_candidate(repo, manifest_path, manifest_dir)?
             {
                 packages.push(package);
             }
@@ -136,26 +164,50 @@ fn should_walk(entry: &DirEntry) -> bool {
     )
 }
 
-fn project_import_names(project: PyProjectProject) -> Vec<String> {
-    if let Some(import_names) = project.import_names {
-        let values = import_names
-            .into_iter()
-            .filter_map(|name| {
-                let sanitized = sanitize_import_name(&name);
-                (!sanitized.is_empty()).then_some(sanitized)
-            })
-            .collect::<Vec<_>>();
-        if !values.is_empty() {
-            return values;
+fn pyproject_import_names(pyproject: &PyProject) -> Vec<String> {
+    let mut names = BTreeSet::new();
+
+    if let Some(project) = &pyproject.project {
+        if let Some(import_names) = &project.import_names {
+            for name in import_names {
+                let sanitized = sanitize_import_name(name);
+                if !sanitized.is_empty() {
+                    names.insert(sanitized);
+                }
+            }
+        }
+
+        if let Some(name) = &project.name {
+            let normalized = normalize_project_name(name);
+            if !normalized.is_empty() {
+                names.insert(normalized);
+            }
         }
     }
 
-    project
-        .name
-        .into_iter()
-        .map(|name| normalize_project_name(&name))
-        .filter(|name| !name.is_empty())
-        .collect()
+    if let Some(tool) = &pyproject.tool {
+        if let Some(poetry) = &tool.poetry {
+            if let Some(name) = &poetry.name {
+                let normalized = normalize_project_name(name);
+                if !normalized.is_empty() {
+                    names.insert(normalized);
+                }
+            }
+        }
+
+        if let Some(flit) = &tool.flit {
+            if let Some(module) = &flit.module {
+                if let Some(name) = &module.name {
+                    let sanitized = sanitize_import_name(name);
+                    if !sanitized.is_empty() {
+                        names.insert(sanitized);
+                    }
+                }
+            }
+        }
+    }
+
+    names.into_iter().collect()
 }
 
 fn sanitize_import_name(value: &str) -> String {
@@ -168,7 +220,7 @@ fn sanitize_import_name(value: &str) -> String {
 }
 
 fn normalize_project_name(value: &str) -> String {
-    value.trim().replace('-', "_")
+    value.trim().to_lowercase().replace(['-', '.', ' '], "_")
 }
 
 fn resolve_candidate(
@@ -210,6 +262,96 @@ fn resolve_candidate(
     }
 
     Ok(None)
+}
+
+fn infer_single_layout_candidate(
+    repo: &Path,
+    manifest_path: &Path,
+    manifest_dir: &Path,
+) -> anyhow::Result<Option<DiscoveredPackage>> {
+    let mut candidates = BTreeSet::new();
+
+    for search_dir in [manifest_dir.join("src"), manifest_dir.to_path_buf()] {
+        if !search_dir.is_dir() {
+            continue;
+        }
+
+        let search = repo_relative(repo, &search_dir)?;
+        for entry in fs::read_dir(&search_dir)
+            .with_context(|| format!("failed to read {}", search_dir.display()))?
+        {
+            let entry = entry?;
+            if !entry.file_type()?.is_dir() {
+                continue;
+            }
+
+            let package_name = entry.file_name().to_string_lossy().to_string();
+            if !is_likely_package_name(&package_name) {
+                continue;
+            }
+
+            let package_root = entry.path();
+            if !package_root.join("__init__.py").exists() {
+                continue;
+            }
+
+            candidates.insert((
+                package_name,
+                search.clone(),
+                repo_relative(repo, &package_root)?,
+            ));
+        }
+    }
+
+    let Some((package, search, root)) = only_candidate(candidates) else {
+        return Ok(None);
+    };
+
+    Ok(Some(DiscoveredPackage {
+        package,
+        search: vec![search],
+        roots: vec![root],
+        manifest_path: repo_relative(repo, manifest_path)?,
+    }))
+}
+
+fn only_candidate(
+    candidates: BTreeSet<(String, PathBuf, PathBuf)>,
+) -> Option<(String, PathBuf, PathBuf)> {
+    if candidates.len() == 1 {
+        candidates.into_iter().next()
+    } else {
+        None
+    }
+}
+
+fn is_likely_package_name(value: &str) -> bool {
+    if value.starts_with('_')
+        || value.starts_with('.')
+        || matches!(
+            value,
+            "__pycache__"
+                | "tests"
+                | "test"
+                | "docs"
+                | "doc"
+                | "examples"
+                | "example"
+                | "scripts"
+                | "tasks"
+                | "benchmarks"
+        )
+    {
+        return false;
+    }
+
+    let mut chars = value.chars();
+    match chars.next() {
+        Some(character) if character.is_ascii_alphabetic() => {}
+        _ => return false,
+    }
+
+    chars.all(|character| character.is_ascii_alphanumeric() || character == '_')
 }
 
 fn repo_relative(repo: &Path, path: &Path) -> anyhow::Result<PathBuf> {
@@ -260,6 +402,42 @@ mod tests {
         assert_eq!(packages.len(), 1);
         assert_eq!(packages[0].search, vec![PathBuf::from("")]);
         assert_eq!(packages[0].roots, vec![PathBuf::from("flat_pkg")]);
+    }
+
+    #[test]
+    fn discovers_tool_poetry_package() {
+        let repo = tempdir().unwrap();
+        fs::create_dir_all(repo.path().join("tomlkit")).unwrap();
+        fs::write(
+            repo.path().join("pyproject.toml"),
+            "[tool.poetry]\nname = \"tomlkit\"\n",
+        )
+        .unwrap();
+        fs::write(repo.path().join("tomlkit/__init__.py"), "").unwrap();
+
+        let packages = discover_python_packages(repo.path()).unwrap();
+        assert_eq!(packages.len(), 1);
+        assert_eq!(packages[0].package, "tomlkit");
+        assert_eq!(packages[0].search, vec![PathBuf::from("")]);
+        assert_eq!(packages[0].roots, vec![PathBuf::from("tomlkit")]);
+    }
+
+    #[test]
+    fn falls_back_to_the_only_package_directory() {
+        let repo = tempdir().unwrap();
+        fs::create_dir_all(repo.path().join("jwt")).unwrap();
+        fs::write(
+            repo.path().join("pyproject.toml"),
+            "[project]\nname = \"PyJWT\"\n",
+        )
+        .unwrap();
+        fs::write(repo.path().join("jwt/__init__.py"), "").unwrap();
+
+        let packages = discover_python_packages(repo.path()).unwrap();
+        assert_eq!(packages.len(), 1);
+        assert_eq!(packages[0].package, "jwt");
+        assert_eq!(packages[0].search, vec![PathBuf::from("")]);
+        assert_eq!(packages[0].roots, vec![PathBuf::from("jwt")]);
     }
 
     #[test]
