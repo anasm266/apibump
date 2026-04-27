@@ -113,9 +113,12 @@ def snapshot_public_api(root: Any) -> list[dict[str, Any]]:
 
 def normalize_symbol(obj: Any, parent_kind: str) -> dict[str, Any]:
     kind = symbol_kind(obj, parent_kind)
+    path = getattr(obj, "path", "<unknown>")
+    canonical_path = getattr(obj, "canonical_path", None) or path
     return {
-        "path": getattr(obj, "path", "<unknown>"),
+        "path": path,
         "parent_path": getattr(getattr(obj, "parent", None), "path", "") or "",
+        "canonical_path": canonical_path,
         "kind": kind,
         "parameters": parameters_for(obj, kind),
     }

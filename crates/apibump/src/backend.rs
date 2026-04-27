@@ -89,6 +89,8 @@ pub struct ParameterSnapshot {
 pub struct SymbolSnapshot {
     pub path: String,
     pub parent_path: String,
+    #[serde(default)]
+    pub canonical_path: String,
     pub kind: SymbolKind,
     #[serde(default)]
     pub parameters: Vec<ParameterSnapshot>,
@@ -265,11 +267,12 @@ mod tests {
     #[test]
     fn parses_symbol_snapshot_kind() {
         let snapshot: SymbolSnapshot = serde_json::from_str(
-            r#"{"path":"pkg.api.create_user","parent_path":"pkg.api","kind":"function","parameters":[]}"#,
+            r#"{"path":"pkg.api.create_user","parent_path":"pkg.api","canonical_path":"pkg.api.create_user","kind":"function","parameters":[]}"#,
         )
         .unwrap();
 
         assert!(matches!(snapshot.kind, SymbolKind::Function));
+        assert_eq!(snapshot.canonical_path, "pkg.api.create_user");
     }
 
     #[test]
@@ -290,6 +293,7 @@ mod tests {
                     {
                         "path":"pkg.api.create_user",
                         "parent_path":"pkg.api",
+                        "canonical_path":"pkg.api.create_user",
                         "kind":"function",
                         "parameters":[{"name":"name","kind":"ParameterKind.positional_or_keyword","required":true}]
                     }

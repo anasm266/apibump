@@ -476,11 +476,13 @@ fn classify_snapshot_changes(
         .copied()
         .collect::<BTreeSet<_>>();
     for path in &removed_paths {
-        if has_removed_ancestor(path, &removed_paths) || breaking_paths.contains(*path) {
+        let symbol = old_by_path[path];
+        if has_removed_ancestor(path, &removed_paths)
+            || is_covered_by_breaking_change(symbol, breaking_paths)
+        {
             continue;
         }
 
-        let symbol = old_by_path[path];
         changes.push(ApiChange {
             package: Some(package.to_string()),
             severity: Severity::Breaking,
@@ -497,12 +499,13 @@ fn classify_snapshot_changes(
         .keys()
         .filter(|path| new_by_path.contains_key(**path))
     {
-        if has_breaking_ancestor(path, breaking_paths) {
-            continue;
-        }
-
         let old_symbol = old_by_path[path];
         let new_symbol = new_by_path[path];
+        if is_covered_by_breaking_change(old_symbol, breaking_paths)
+            || is_covered_by_breaking_change(new_symbol, breaking_paths)
+        {
+            continue;
+        }
 
         if old_symbol.kind != new_symbol.kind || old_symbol.parent_path != new_symbol.parent_path {
             changes.push(ApiChange {
@@ -660,8 +663,19 @@ fn has_removed_ancestor(path: &str, removed_paths: &BTreeSet<&str>) -> bool {
     ancestor_paths(path).any(|ancestor| removed_paths.contains(ancestor))
 }
 
-fn has_breaking_ancestor(path: &str, breaking_paths: &BTreeSet<String>) -> bool {
-    ancestor_paths(path).any(|ancestor| breaking_paths.contains(ancestor))
+fn is_covered_by_breaking_change(
+    symbol: &SymbolSnapshot,
+    breaking_paths: &BTreeSet<String>,
+) -> bool {
+    is_path_covered_by_breaking_change(&symbol.path, breaking_paths)
+        || (!symbol.canonical_path.is_empty()
+            && symbol.canonical_path != symbol.path
+            && is_path_covered_by_breaking_change(&symbol.canonical_path, breaking_paths))
+}
+
+fn is_path_covered_by_breaking_change(path: &str, breaking_paths: &BTreeSet<String>) -> bool {
+    breaking_paths.contains(path)
+        || ancestor_paths(path).any(|ancestor| breaking_paths.contains(ancestor))
 }
 
 fn ancestor_paths(path: &str) -> impl Iterator<Item = &str> {
@@ -872,12 +886,14 @@ mod tests {
                 SymbolSnapshot {
                     path: "pkg.models".to_string(),
                     parent_path: "pkg".to_string(),
+                    canonical_path: "pkg.models".to_string(),
                     kind: SymbolKind::Module,
                     parameters: vec![],
                 },
                 SymbolSnapshot {
                     path: "pkg.models.User".to_string(),
                     parent_path: "pkg.models".to_string(),
+                    canonical_path: "pkg.models.User".to_string(),
                     kind: SymbolKind::Class,
                     parameters: vec![],
                 },
@@ -896,6 +912,7 @@ mod tests {
             &[SymbolSnapshot {
                 path: "pkg.base64_decode".to_string(),
                 parent_path: "pkg".to_string(),
+                canonical_path: "pkg.base64_decode".to_string(),
                 kind: SymbolKind::Alias,
                 parameters: vec![],
             }],
@@ -917,12 +934,14 @@ mod tests {
                 SymbolSnapshot {
                     path: "pkg.models".to_string(),
                     parent_path: "pkg".to_string(),
+                    canonical_path: "pkg.models".to_string(),
                     kind: SymbolKind::Module,
                     parameters: vec![],
                 },
                 SymbolSnapshot {
                     path: "pkg.models.User".to_string(),
                     parent_path: "pkg.models".to_string(),
+                    canonical_path: "pkg.models.User".to_string(),
                     kind: SymbolKind::Class,
                     parameters: vec![],
                 },
@@ -934,6 +953,67 @@ mod tests {
         assert_eq!(changes.len(), 1);
         assert_eq!(changes[0].symbol, "pkg.models");
         assert_eq!(changes[0].severity, Severity::Breaking);
+    }
+
+    #[test]
+    fn snapshot_unknowns_are_suppressed_when_a_breaking_change_already_covers_the_symbol() {
+        let old_parameters = vec![ParameterSnapshot {
+            name: "string".to_string(),
+            kind: "ParameterKind.positional_or_keyword".to_string(),
+            required: true,
+        }];
+        let new_parameters = vec![
+            ParameterSnapshot {
+                name: "string".to_string(),
+                kind: "ParameterKind.positional_or_keyword".to_string(),
+                required: true,
+            },
+            ParameterSnapshot {
+                name: "mode".to_string(),
+                kind: "ParameterKind.positional_or_keyword".to_string(),
+                required: true,
+            },
+        ];
+        let breaking_paths = BTreeSet::from([String::from("pkg.api.parse")]);
+
+        let changes = classify_snapshot_changes(
+            "pkg",
+            &[
+                SymbolSnapshot {
+                    path: "pkg.api.parse".to_string(),
+                    parent_path: "pkg.api".to_string(),
+                    canonical_path: "pkg.api.parse".to_string(),
+                    kind: SymbolKind::Function,
+                    parameters: old_parameters.clone(),
+                },
+                SymbolSnapshot {
+                    path: "pkg.parse".to_string(),
+                    parent_path: "pkg".to_string(),
+                    canonical_path: "pkg.api.parse".to_string(),
+                    kind: SymbolKind::Alias,
+                    parameters: old_parameters,
+                },
+            ],
+            &[
+                SymbolSnapshot {
+                    path: "pkg.api.parse".to_string(),
+                    parent_path: "pkg.api".to_string(),
+                    canonical_path: "pkg.api.parse".to_string(),
+                    kind: SymbolKind::Function,
+                    parameters: new_parameters.clone(),
+                },
+                SymbolSnapshot {
+                    path: "pkg.parse".to_string(),
+                    parent_path: "pkg".to_string(),
+                    canonical_path: "pkg.api.parse".to_string(),
+                    kind: SymbolKind::Alias,
+                    parameters: new_parameters,
+                },
+            ],
+            &breaking_paths,
+        );
+
+        assert!(changes.is_empty());
     }
 
     #[test]
