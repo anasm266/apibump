@@ -41,6 +41,10 @@ inputs:
     description: Log output format: human, json, markdown, or github.
     required: false
     default: github
+  version:
+    description: ApiBump release version to download.
+    required: false
+    default: v0.1.0
 
 outputs:
   recommendation:
@@ -65,15 +69,14 @@ outputs:
 runs:
   using: composite
   steps:
-    - name: Setup Rust
-      uses: dtolnay/rust-toolchain@stable
+    - name: Install ApiBump
+      shell: bash
+      env:
+        INPUT_VERSION: ${{ inputs.version }}
+      run: bash "$GITHUB_ACTION_PATH/scripts/install-cli.sh"
 
     - name: Setup uv
       uses: astral-sh/setup-uv@v6
-
-    - name: Install ApiBump
-      shell: bash
-      run: cargo install --path "$GITHUB_ACTION_PATH/crates/apibump" --locked --force
 
     - name: Run ApiBump
       id: run
