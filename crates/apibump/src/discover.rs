@@ -117,6 +117,9 @@ pub fn package_has_changed(roots: &[PathBuf], changed_files: &[PathBuf]) -> bool
 }
 
 pub fn path_is_within(path: &Path, root: &Path) -> bool {
+    if root.as_os_str().is_empty() || root == Path::new(".") {
+        return true;
+    }
     path == root || path.starts_with(root)
 }
 

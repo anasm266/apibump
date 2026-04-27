@@ -7,7 +7,7 @@ use std::{
 use serde::Deserialize;
 use thiserror::Error;
 
-use crate::model::{ApiChange, ApiReport, Diagnostic, Severity};
+use crate::model::Diagnostic;
 
 const GRIFFE_BRIDGE: &str = include_str!("../python/griffe_bridge.py");
 
@@ -39,12 +39,16 @@ pub enum BackendError {
 #[derive(Debug, Deserialize)]
 struct BridgeReport {
     #[serde(default)]
-    changes: Vec<BridgeChange>,
+    breaking_changes: Vec<BridgeChange>,
+    #[serde(default)]
+    old_snapshot: Vec<SymbolSnapshot>,
+    #[serde(default)]
+    new_snapshot: Vec<SymbolSnapshot>,
     #[serde(default)]
     diagnostics: Vec<Diagnostic>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
 struct BridgeChange {
     kind: String,
     symbol: String,
@@ -55,17 +59,54 @@ struct BridgeChange {
     backend: String,
 }
 
-pub fn run_python_backend(options: &PythonBackendOptions) -> Result<ApiReport, BackendError> {
-    match run_python_backend_strict(options) {
-        Ok(report) => Ok(report),
-        Err(error) if !options.strict => {
-            Ok(ApiReport::backend_unknown(error.to_string(), "griffe"))
-        }
-        Err(error) => Err(error),
-    }
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PythonBackendResult {
+    pub breaking_changes: Vec<BreakingChange>,
+    pub old_snapshot: Vec<SymbolSnapshot>,
+    pub new_snapshot: Vec<SymbolSnapshot>,
+    pub diagnostics: Vec<Diagnostic>,
 }
 
-fn run_python_backend_strict(options: &PythonBackendOptions) -> Result<ApiReport, BackendError> {
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum SymbolKind {
+    Module,
+    Class,
+    Function,
+    Method,
+    Attribute,
+    Alias,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+pub struct ParameterSnapshot {
+    pub name: String,
+    pub kind: String,
+    pub required: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+pub struct SymbolSnapshot {
+    pub path: String,
+    pub parent_path: String,
+    pub kind: SymbolKind,
+    #[serde(default)]
+    pub parameters: Vec<ParameterSnapshot>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct BreakingChange {
+    pub kind: String,
+    pub symbol: String,
+    pub file: Option<String>,
+    pub line: Option<usize>,
+    pub message: String,
+    pub backend: String,
+}
+
+pub fn run_python_backend(options: &PythonBackendOptions) -> Result<PythonBackendResult, BackendError> {
+    let _ = options.strict;
+
     let bridge_dir = tempfile::tempdir().map_err(BackendError::BridgeTemp)?;
     let bridge_path = bridge_dir.path().join("griffe_bridge.py");
     fs::write(&bridge_path, GRIFFE_BRIDGE).map_err(BackendError::BridgeWrite)?;
@@ -106,21 +147,24 @@ fn run_python_backend_strict(options: &PythonBackendOptions) -> Result<ApiReport
 
     let bridge_report: BridgeReport =
         serde_json::from_slice(&output.stdout).map_err(BackendError::InvalidJson)?;
-    let changes = bridge_report
-        .changes
-        .into_iter()
-        .map(|change| ApiChange {
-            severity: Severity::Breaking,
-            kind: change.kind,
-            symbol: change.symbol,
-            file: change.file,
-            line: change.line,
-            message: change.message,
-            backend: change.backend,
-        })
-        .collect();
 
-    Ok(ApiReport::new(changes, bridge_report.diagnostics))
+    Ok(PythonBackendResult {
+        breaking_changes: bridge_report
+            .breaking_changes
+            .into_iter()
+            .map(|change| BreakingChange {
+                kind: change.kind,
+                symbol: change.symbol,
+                file: change.file,
+                line: change.line,
+                message: change.message,
+                backend: change.backend,
+            })
+            .collect(),
+        old_snapshot: bridge_report.old_snapshot,
+        new_snapshot: bridge_report.new_snapshot,
+        diagnostics: bridge_report.diagnostics,
+    })
 }
 
 fn normalized_search_paths(search_paths: &[PathBuf]) -> Vec<&Path> {
@@ -141,4 +185,51 @@ fn default_python_command() -> String {
 
 fn default_griffe_backend() -> String {
     "griffe".to_string()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn parses_symbol_snapshot_kind() {
+        let snapshot: SymbolSnapshot = serde_json::from_str(
+            r#"{"path":"pkg.api.create_user","parent_path":"pkg.api","kind":"function","parameters":[]}"#,
+        )
+        .unwrap();
+
+        assert!(matches!(snapshot.kind, SymbolKind::Function));
+    }
+
+    #[test]
+    fn deserializes_bridge_report_shape() {
+        let report: BridgeReport = serde_json::from_str(
+            r#"{
+                "breaking_changes":[
+                    {
+                        "kind":"parameter_removed",
+                        "symbol":"pkg.api.create_user",
+                        "file":"src/pkg/api.py",
+                        "line":1,
+                        "message":"Parameter was removed",
+                        "backend":"griffe"
+                    }
+                ],
+                "old_snapshot":[
+                    {
+                        "path":"pkg.api.create_user",
+                        "parent_path":"pkg.api",
+                        "kind":"function",
+                        "parameters":[{"name":"name","kind":"ParameterKind.positional_or_keyword","required":true}]
+                    }
+                ],
+                "new_snapshot":[],
+                "diagnostics":[]
+            }"#,
+        )
+        .unwrap();
+
+        assert_eq!(report.breaking_changes.len(), 1);
+        assert_eq!(report.old_snapshot.len(), 1);
+    }
 }

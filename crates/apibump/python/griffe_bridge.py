@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
 """Griffe bridge for ApiBump.
 
-This script is intentionally small and JSON-only. Rust owns the public report
-schema; Python only adapts Griffe objects into a backend-neutral shape.
+Rust owns the public report schema. This bridge loads Python API data with
+Griffe, normalizes breaking changes, and emits a conservative public snapshot
+used for additive and unknown classification.
 """
 
 from __future__ import annotations
@@ -46,15 +47,26 @@ def main() -> int:
             search_paths=search_paths,
             resolve_aliases=True,
         )
-        changes = [
+        breaking_changes = [
             normalize_breakage(breakage, griffe, search_paths)
             for breakage in griffe.find_breaking_changes(old_api, new_api)
         ]
+        old_snapshot = snapshot_public_api(old_api)
+        new_snapshot = snapshot_public_api(new_api)
     except Exception as error:
         print(f"griffe check failed: {error}", file=sys.stderr)
         return 3
 
-    json.dump({"changes": changes, "diagnostics": []}, sys.stdout, sort_keys=True)
+    json.dump(
+        {
+            "breaking_changes": breaking_changes,
+            "old_snapshot": old_snapshot,
+            "new_snapshot": new_snapshot,
+            "diagnostics": [],
+        },
+        sys.stdout,
+        sort_keys=True,
+    )
     sys.stdout.write("\n")
     return 0
 
@@ -72,6 +84,74 @@ def normalize_breakage(breakage: Any, griffe: Any, search_paths: list[str]) -> d
         "message": message_for(breakage, griffe),
         "backend": "griffe",
     }
+
+
+def snapshot_public_api(root: Any) -> list[dict[str, Any]]:
+    items: list[dict[str, Any]] = []
+    seen: set[str] = set()
+
+    def walk(obj: Any, parent_kind: str) -> None:
+        members = getattr(obj, "members", None)
+        if not members:
+            return
+
+        for child in members.values():
+            if not getattr(child, "is_public", False):
+                continue
+
+            item = normalize_symbol(child, parent_kind)
+            if item["path"] not in seen:
+                seen.add(item["path"])
+                items.append(item)
+
+            walk(child, item["kind"])
+
+    walk(root, "module")
+    items.sort(key=lambda item: item["path"])
+    return items
+
+
+def normalize_symbol(obj: Any, parent_kind: str) -> dict[str, Any]:
+    kind = symbol_kind(obj, parent_kind)
+    return {
+        "path": getattr(obj, "path", "<unknown>"),
+        "parent_path": getattr(getattr(obj, "parent", None), "path", "") or "",
+        "kind": kind,
+        "parameters": parameters_for(obj, kind),
+    }
+
+
+def symbol_kind(obj: Any, parent_kind: str) -> str:
+    underlying_kind = snake_case(str(getattr(obj, "kind", "")))
+    is_alias = bool(getattr(obj, "is_alias", False))
+
+    if underlying_kind == "function" and parent_kind in {"class", "alias"}:
+        return "method"
+    if underlying_kind == "attribute" and parent_kind in {"class", "alias"}:
+        return "attribute"
+    if is_alias and parent_kind == "module":
+        return "alias"
+    if underlying_kind in {"module", "class", "function", "attribute"}:
+        return underlying_kind
+    return "alias" if is_alias else underlying_kind
+
+
+def parameters_for(obj: Any, kind: str) -> list[dict[str, Any]]:
+    if kind not in {"function", "method", "alias"}:
+        return []
+    if not hasattr(obj, "parameters"):
+        return []
+
+    items = []
+    for parameter in getattr(obj, "parameters", []):
+        items.append(
+            {
+                "name": parameter.name,
+                "kind": str(parameter.kind),
+                "required": bool(getattr(parameter, "required", False)),
+            }
+        )
+    return items
 
 
 def as_dict(breakage: Any) -> dict[str, Any]:

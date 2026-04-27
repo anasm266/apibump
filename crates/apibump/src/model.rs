@@ -2,7 +2,7 @@ use std::fmt;
 
 use serde::{Deserialize, Serialize};
 
-pub const SCHEMA_VERSION: &str = "0.1";
+pub const SCHEMA_VERSION: &str = "0.2";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -52,10 +52,12 @@ pub struct Summary {
     pub additive: usize,
     pub internal: usize,
     pub unknown: usize,
+    #[serde(default)]
+    pub suppressed: usize,
 }
 
 impl Summary {
-    pub fn from_changes(changes: &[ApiChange]) -> Self {
+    pub fn from_changes(changes: &[ApiChange], suppressed: usize) -> Self {
         let mut summary = Self::default();
         for change in changes {
             match change.severity {
@@ -65,12 +67,15 @@ impl Summary {
                 Severity::Unknown => summary.unknown += 1,
             }
         }
+        summary.suppressed = suppressed;
         summary
     }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ApiChange {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub package: Option<String>,
     pub severity: Severity,
     pub kind: String,
     pub symbol: String,
@@ -89,41 +94,88 @@ pub struct Diagnostic {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct PackageReport {
+    pub package: String,
+    pub recommendation: Recommendation,
+    pub summary: Summary,
+    pub changes: Vec<ApiChange>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub suppressed_changes: Vec<ApiChange>,
+}
+
+impl PackageReport {
+    pub fn new(
+        package: impl Into<String>,
+        changes: Vec<ApiChange>,
+        suppressed_changes: Vec<ApiChange>,
+    ) -> Self {
+        let summary = Summary::from_changes(&changes, suppressed_changes.len());
+        let recommendation = recommend(&summary);
+
+        Self {
+            package: package.into(),
+            recommendation,
+            summary,
+            changes,
+            suppressed_changes,
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ApiReport {
     pub schema_version: String,
     pub recommendation: Recommendation,
     pub summary: Summary,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub packages: Vec<PackageReport>,
     pub changes: Vec<ApiChange>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub suppressed_changes: Vec<ApiChange>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub diagnostics: Vec<Diagnostic>,
 }
 
 impl ApiReport {
-    pub fn new(changes: Vec<ApiChange>, diagnostics: Vec<Diagnostic>) -> Self {
-        let summary = Summary::from_changes(&changes);
+    pub fn from_packages(packages: Vec<PackageReport>, diagnostics: Vec<Diagnostic>) -> Self {
+        let mut changes = Vec::new();
+        let mut suppressed_changes = Vec::new();
+        for package in &packages {
+            changes.extend(package.changes.clone());
+            suppressed_changes.extend(package.suppressed_changes.clone());
+        }
+
+        let summary = Summary::from_changes(&changes, suppressed_changes.len());
         let recommendation = recommend(&summary);
 
         Self {
             schema_version: SCHEMA_VERSION.to_string(),
             recommendation,
             summary,
+            packages,
             changes,
+            suppressed_changes,
             diagnostics,
         }
     }
 
     pub fn backend_unknown(message: impl Into<String>, backend: impl Into<String>) -> Self {
         let backend = backend.into();
-        Self::new(
-            vec![ApiChange {
-                severity: Severity::Unknown,
-                kind: "backend_error".to_string(),
-                symbol: "<backend>".to_string(),
-                file: None,
-                line: None,
-                message: message.into(),
-                backend: backend.clone(),
-            }],
+        Self::from_packages(
+            vec![PackageReport::new(
+                "<backend>",
+                vec![ApiChange {
+                    package: None,
+                    severity: Severity::Unknown,
+                    kind: "backend_error".to_string(),
+                    symbol: "<backend>".to_string(),
+                    file: None,
+                    line: None,
+                    message: message.into(),
+                    backend: backend.clone(),
+                }],
+                vec![],
+            )],
             vec![Diagnostic {
                 level: "error".to_string(),
                 message: format!("{backend} backend failed"),
@@ -150,6 +202,7 @@ mod tests {
 
     fn change(severity: Severity) -> ApiChange {
         ApiChange {
+            package: Some("pkg".to_string()),
             severity,
             kind: "object_removed".to_string(),
             symbol: "pkg.api.symbol".to_string(),
@@ -162,8 +215,12 @@ mod tests {
 
     #[test]
     fn recommends_major_when_any_breaking_change_exists() {
-        let report = ApiReport::new(
-            vec![change(Severity::Additive), change(Severity::Breaking)],
+        let report = ApiReport::from_packages(
+            vec![PackageReport::new(
+                "pkg",
+                vec![change(Severity::Additive), change(Severity::Breaking)],
+                vec![],
+            )],
             vec![],
         );
 
@@ -174,16 +231,38 @@ mod tests {
 
     #[test]
     fn recommends_minor_for_additive_only_changes() {
-        let report = ApiReport::new(vec![change(Severity::Additive)], vec![]);
+        let report = ApiReport::from_packages(
+            vec![PackageReport::new(
+                "pkg",
+                vec![change(Severity::Additive)],
+                vec![],
+            )],
+            vec![],
+        );
 
         assert_eq!(report.recommendation, Recommendation::Minor);
     }
 
     #[test]
     fn recommends_patch_for_empty_reports() {
-        let report = ApiReport::new(vec![], vec![]);
+        let report = ApiReport::from_packages(vec![], vec![]);
 
         assert_eq!(report.recommendation, Recommendation::Patch);
+    }
+
+    #[test]
+    fn tracks_suppressed_counts() {
+        let report = ApiReport::from_packages(
+            vec![PackageReport::new(
+                "pkg",
+                vec![change(Severity::Internal)],
+                vec![change(Severity::Breaking)],
+            )],
+            vec![],
+        );
+
+        assert_eq!(report.summary.suppressed, 1);
+        assert_eq!(report.packages[0].summary.suppressed, 1);
     }
 
     #[test]

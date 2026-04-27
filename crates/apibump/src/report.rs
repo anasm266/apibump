@@ -1,4 +1,4 @@
-use crate::model::{ApiChange, ApiReport, Recommendation, Severity};
+use crate::model::{ApiChange, ApiReport, PackageReport, Recommendation, Severity};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, clap::ValueEnum)]
 pub enum OutputFormat {
@@ -24,15 +24,32 @@ pub fn render_human(report: &ApiReport) -> String {
         report.recommendation
     ));
     output.push_str(&format!(
-        "Summary: {} breaking, {} additive, {} internal, {} unknown\n",
+        "Summary: {} breaking, {} additive, {} internal, {} unknown, {} suppressed\n",
         report.summary.breaking,
         report.summary.additive,
         report.summary.internal,
-        report.summary.unknown
+        report.summary.unknown,
+        report.summary.suppressed
     ));
 
+    if !report.packages.is_empty() {
+        output.push('\n');
+        for package in &report.packages {
+            output.push_str(&format!(
+                "Package {}: {} ({} breaking, {} additive, {} internal, {} unknown, {} suppressed)\n",
+                package.package,
+                package.recommendation,
+                package.summary.breaking,
+                package.summary.additive,
+                package.summary.internal,
+                package.summary.unknown,
+                package.summary.suppressed
+            ));
+        }
+    }
+
     if report.changes.is_empty() {
-        output.push_str("No public API changes detected.\n");
+        output.push_str("\nNo public API changes detected.\n");
         return output;
     }
 
@@ -48,6 +65,16 @@ pub fn render_human(report: &ApiReport) -> String {
         ));
     }
 
+    if !report.suppressed_changes.is_empty() {
+        output.push_str("\nSuppressed changes:\n");
+        for change in &report.suppressed_changes {
+            output.push_str(&format!(
+                "- [{}] {} {}: {}\n",
+                change.severity, change.kind, change.symbol, change.message
+            ));
+        }
+    }
+
     output
 }
 
@@ -60,29 +87,73 @@ pub fn render_markdown(report: &ApiReport) -> String {
         report.recommendation
     ));
     output.push_str(&format!(
-        "**Summary:** `{}` breaking, `{}` additive, `{}` internal, `{}` unknown\n\n",
+        "**Summary:** `{}` breaking, `{}` additive, `{}` internal, `{}` unknown, `{}` suppressed\n\n",
         report.summary.breaking,
         report.summary.additive,
         report.summary.internal,
-        report.summary.unknown
+        report.summary.unknown,
+        report.summary.suppressed
     ));
+
+    if !report.packages.is_empty() {
+        output.push_str("### Packages\n\n");
+        output.push_str("| Package | Recommendation | Breaking | Additive | Internal | Unknown | Suppressed |\n");
+        output.push_str("| --- | --- | --- | --- | --- | --- | --- |\n");
+        for package in &report.packages {
+            output.push_str(&package_summary_row(package));
+        }
+        output.push('\n');
+    }
 
     if report.changes.is_empty() {
         output.push_str("No public API changes detected.\n");
         return output;
     }
 
-    output.push_str("| Severity | Kind | Symbol | Location | Message |\n");
-    output.push_str("| --- | --- | --- | --- | --- |\n");
+    let include_package = report.packages.len() > 1;
+    if include_package {
+        output.push_str("| Package | Severity | Kind | Symbol | Location | Message |\n");
+        output.push_str("| --- | --- | --- | --- | --- | --- |\n");
+    } else {
+        output.push_str("| Severity | Kind | Symbol | Location | Message |\n");
+        output.push_str("| --- | --- | --- | --- | --- |\n");
+    }
     for change in &report.changes {
-        output.push_str(&format!(
-            "| `{}` | `{}` | `{}` | {} | {} |\n",
-            change.severity,
-            escape_markdown_table(&change.kind),
-            escape_markdown_table(&change.symbol),
-            escape_markdown_table(&location(change)),
-            escape_markdown_table(&change.message)
-        ));
+        if include_package {
+            output.push_str(&format!(
+                "| `{}` | `{}` | `{}` | `{}` | {} | {} |\n",
+                escape_markdown_table(change.package.as_deref().unwrap_or("-")),
+                change.severity,
+                escape_markdown_table(&change.kind),
+                escape_markdown_table(&change.symbol),
+                escape_markdown_table(&location(change)),
+                escape_markdown_table(&change.message)
+            ));
+        } else {
+            output.push_str(&format!(
+                "| `{}` | `{}` | `{}` | {} | {} |\n",
+                change.severity,
+                escape_markdown_table(&change.kind),
+                escape_markdown_table(&change.symbol),
+                escape_markdown_table(&location(change)),
+                escape_markdown_table(&change.message)
+            ));
+        }
+    }
+
+    if !report.suppressed_changes.is_empty() {
+        output.push_str("\n### Suppressed Changes\n\n");
+        output.push_str("| Severity | Kind | Symbol | Message |\n");
+        output.push_str("| --- | --- | --- | --- |\n");
+        for change in &report.suppressed_changes {
+            output.push_str(&format!(
+                "| `{}` | `{}` | `{}` | {} |\n",
+                change.severity,
+                escape_markdown_table(&change.kind),
+                escape_markdown_table(&change.symbol),
+                escape_markdown_table(&change.message)
+            ));
+        }
     }
 
     output
@@ -138,6 +209,19 @@ fn recommendation_sentence(recommendation: Recommendation) -> &'static str {
     }
 }
 
+fn package_summary_row(package: &PackageReport) -> String {
+    format!(
+        "| `{}` | `{}` | `{}` | `{}` | `{}` | `{}` | `{}` |\n",
+        escape_markdown_table(&package.package),
+        package.recommendation,
+        package.summary.breaking,
+        package.summary.additive,
+        package.summary.internal,
+        package.summary.unknown,
+        package.summary.suppressed
+    )
+}
+
 fn location_suffix(change: &ApiChange) -> String {
     let location = location(change);
     if location == "-" {
@@ -180,22 +264,27 @@ fn escape_github_command_data(value: &str) -> String {
 mod tests {
     use pretty_assertions::assert_eq;
 
-    use crate::model::{ApiChange, ApiReport, Severity};
+    use crate::model::{ApiChange, ApiReport, PackageReport, Severity};
 
     use super::*;
 
     #[test]
     fn renders_stable_markdown_summary() {
-        let report = ApiReport::new(
-            vec![ApiChange {
-                severity: Severity::Breaking,
-                kind: "parameter_removed".to_string(),
-                symbol: "pkg.api.create_user".to_string(),
-                file: Some("src/pkg/api.py".to_string()),
-                line: Some(42),
-                message: "Parameter was removed".to_string(),
-                backend: "griffe".to_string(),
-            }],
+        let report = ApiReport::from_packages(
+            vec![PackageReport::new(
+                "pkg",
+                vec![ApiChange {
+                    package: Some("pkg".to_string()),
+                    severity: Severity::Breaking,
+                    kind: "parameter_removed".to_string(),
+                    symbol: "pkg.api.create_user".to_string(),
+                    file: Some("src/pkg/api.py".to_string()),
+                    line: Some(42),
+                    message: "Parameter was removed".to_string(),
+                    backend: "griffe".to_string(),
+                }],
+                vec![],
+            )],
             vec![],
         );
 
@@ -204,7 +293,11 @@ mod tests {
             "<!-- apibump-comment -->\n\
 ## ApiBump API Compatibility Report\n\n\
 **Recommendation:** `major`\n\n\
-**Summary:** `1` breaking, `0` additive, `0` internal, `0` unknown\n\n\
+**Summary:** `1` breaking, `0` additive, `0` internal, `0` unknown, `0` suppressed\n\n\
+### Packages\n\n\
+| Package | Recommendation | Breaking | Additive | Internal | Unknown | Suppressed |\n\
+| --- | --- | --- | --- | --- | --- | --- |\n\
+| `pkg` | `major` | `1` | `0` | `0` | `0` | `0` |\n\n\
 | Severity | Kind | Symbol | Location | Message |\n\
 | --- | --- | --- | --- | --- |\n\
 | `breaking` | `parameter_removed` | `pkg.api.create_user` | src/pkg/api.py:42 | Parameter was removed |\n"
