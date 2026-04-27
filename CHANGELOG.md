@@ -1,5 +1,10 @@
 # Changelog
 
+## v0.2.1
+
+- Fix Python bridge symbol kind normalization for real Griffe output.
+- Add a regression test that catches `Kind.MODULE` style enum string handling.
+
 ## v0.2.0
 
 - Add `apibump.toml` configuration support.
