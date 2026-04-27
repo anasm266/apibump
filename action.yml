@@ -26,7 +26,7 @@ inputs:
     required: false
     default: HEAD
   fail-on:
-    description: Failure policy: breaking, unknown, or never.
+    description: "Failure policy: breaking, unknown, or never."
     required: false
     default: breaking
   comment:
