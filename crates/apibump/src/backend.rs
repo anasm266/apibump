@@ -122,6 +122,8 @@ pub fn run_python_backend(
         .clone()
         .or_else(|| env::var("APIBUMP_PYTHON").ok())
         .unwrap_or_else(default_python_command);
+    let base = resolve_git_ref(&options.repo, &options.base)?;
+    let head = resolve_git_ref(&options.repo, &options.head)?;
 
     let mut command = Command::new(python);
     command
@@ -129,9 +131,9 @@ pub fn run_python_backend(
         .arg("--package")
         .arg(&options.package)
         .arg("--base")
-        .arg(&options.base)
+        .arg(&base)
         .arg("--head")
-        .arg(&options.head)
+        .arg(&head)
         .arg("--repo")
         .arg(&options.repo);
 
@@ -181,6 +183,27 @@ fn normalized_search_paths(search_paths: &[PathBuf]) -> Vec<&Path> {
     }
 }
 
+fn resolve_git_ref(repo: &Path, reference: &str) -> Result<String, BackendError> {
+    let output = Command::new("git")
+        .arg("-C")
+        .arg(repo)
+        .args(["rev-parse", "--verify", reference])
+        .output()
+        .map_err(BackendError::Command)?;
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
+        let message = if stderr.is_empty() {
+            format!("failed to resolve git ref {reference}")
+        } else {
+            format!("failed to resolve git ref {reference}: {stderr}")
+        };
+        return Err(BackendError::Failed(message));
+    }
+
+    Ok(String::from_utf8_lossy(&output.stdout).trim().to_string())
+}
+
 fn default_python_command() -> String {
     if cfg!(windows) {
         "python".to_string()
@@ -223,7 +246,21 @@ fn load_fake_backend(root: &Path, package: &str) -> Result<PythonBackendResult, 
 
 #[cfg(test)]
 mod tests {
+    use std::process::Command;
+
+    use tempfile::tempdir;
+
     use super::*;
+
+    fn git(repo: &Path, args: &[&str]) {
+        let status = Command::new("git")
+            .arg("-C")
+            .arg(repo)
+            .args(args)
+            .status()
+            .unwrap();
+        assert!(status.success(), "git {:?} failed", args);
+    }
 
     #[test]
     fn parses_symbol_snapshot_kind() {
@@ -265,5 +302,23 @@ mod tests {
 
         assert_eq!(report.breaking_changes.len(), 1);
         assert_eq!(report.old_snapshot.len(), 1);
+    }
+
+    #[test]
+    fn resolves_git_refs_to_commit_ids() {
+        let repo = tempdir().unwrap();
+        git(repo.path(), &["init"]);
+        git(repo.path(), &["config", "user.email", "test@example.com"]);
+        git(repo.path(), &["config", "user.name", "ApiBump Test"]);
+        std::fs::write(repo.path().join("README.md"), "hello\n").unwrap();
+        git(repo.path(), &["add", "."]);
+        git(repo.path(), &["commit", "-m", "initial"]);
+        git(repo.path(), &["checkout", "-b", "dogfood/windows"]);
+
+        let resolved = resolve_git_ref(repo.path(), "dogfood/windows").unwrap();
+        assert_eq!(resolved.len(), 40);
+        assert!(resolved
+            .chars()
+            .all(|character| character.is_ascii_hexdigit()));
     }
 }
