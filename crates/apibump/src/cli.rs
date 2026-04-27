@@ -470,6 +470,29 @@ fn classify_snapshot_changes(
         });
     }
 
+    let removed_paths = old_by_path
+        .keys()
+        .filter(|path| !new_by_path.contains_key(**path))
+        .copied()
+        .collect::<BTreeSet<_>>();
+    for path in &removed_paths {
+        if has_removed_ancestor(path, &removed_paths) || breaking_paths.contains(*path) {
+            continue;
+        }
+
+        let symbol = old_by_path[path];
+        changes.push(ApiChange {
+            package: Some(package.to_string()),
+            severity: Severity::Breaking,
+            kind: "object_removed".to_string(),
+            symbol: symbol.path.clone(),
+            file: None,
+            line: None,
+            message: format!("Public {} was removed", symbol_kind_label(&symbol.kind)),
+            backend: "apibump".to_string(),
+        });
+    }
+
     for path in old_by_path
         .keys()
         .filter(|path| new_by_path.contains_key(**path))
@@ -631,6 +654,10 @@ fn symbol_kind_label(kind: &SymbolKind) -> &'static str {
 
 fn has_added_ancestor(path: &str, added_paths: &BTreeSet<&str>) -> bool {
     ancestor_paths(path).any(|ancestor| added_paths.contains(ancestor))
+}
+
+fn has_removed_ancestor(path: &str, removed_paths: &BTreeSet<&str>) -> bool {
+    ancestor_paths(path).any(|ancestor| removed_paths.contains(ancestor))
 }
 
 fn has_breaking_ancestor(path: &str, breaking_paths: &BTreeSet<String>) -> bool {
@@ -860,6 +887,53 @@ mod tests {
 
         assert_eq!(changes.len(), 1);
         assert_eq!(changes[0].symbol, "pkg.models");
+    }
+
+    #[test]
+    fn snapshot_removals_become_breaking_changes() {
+        let changes = classify_snapshot_changes(
+            "pkg",
+            &[SymbolSnapshot {
+                path: "pkg.base64_decode".to_string(),
+                parent_path: "pkg".to_string(),
+                kind: SymbolKind::Alias,
+                parameters: vec![],
+            }],
+            &[],
+            &BTreeSet::new(),
+        );
+
+        assert_eq!(changes.len(), 1);
+        assert_eq!(changes[0].severity, Severity::Breaking);
+        assert_eq!(changes[0].kind, "object_removed");
+        assert_eq!(changes[0].symbol, "pkg.base64_decode");
+    }
+
+    #[test]
+    fn snapshot_removals_skip_descendants_of_removed_parents() {
+        let changes = classify_snapshot_changes(
+            "pkg",
+            &[
+                SymbolSnapshot {
+                    path: "pkg.models".to_string(),
+                    parent_path: "pkg".to_string(),
+                    kind: SymbolKind::Module,
+                    parameters: vec![],
+                },
+                SymbolSnapshot {
+                    path: "pkg.models.User".to_string(),
+                    parent_path: "pkg.models".to_string(),
+                    kind: SymbolKind::Class,
+                    parameters: vec![],
+                },
+            ],
+            &[],
+            &BTreeSet::new(),
+        );
+
+        assert_eq!(changes.len(), 1);
+        assert_eq!(changes[0].symbol, "pkg.models");
+        assert_eq!(changes[0].severity, Severity::Breaking);
     }
 
     #[test]

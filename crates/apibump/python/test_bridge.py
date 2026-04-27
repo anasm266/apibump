@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import importlib.util
+import tempfile
 from pathlib import Path
 
 
@@ -22,6 +23,7 @@ class FakeKind:
 
 def main() -> None:
     bridge = load_bridge()
+    import griffe
 
     class FakeObject:
         kind = FakeKind()
@@ -29,6 +31,18 @@ def main() -> None:
 
     assert bridge.normalize_enum_kind(FakeKind()) == "module"
     assert bridge.symbol_kind(FakeObject(), "module") == "module"
+
+    with tempfile.TemporaryDirectory() as temp_dir:
+        root = Path(temp_dir)
+        package_dir = root / "src" / "demo_pkg"
+        package_dir.mkdir(parents=True)
+        (package_dir / "__init__.py").write_text("from .api import public_fn as public_fn\n")
+        (package_dir / "api.py").write_text("def public_fn() -> None:\n    return None\n")
+
+        module = griffe.load("demo_pkg", search_paths=[str(root / "src")], resolve_aliases=True)
+        snapshot = bridge.snapshot_public_api(module)
+
+        assert any(item["path"] == "demo_pkg.public_fn" for item in snapshot)
 
 
 if __name__ == "__main__":

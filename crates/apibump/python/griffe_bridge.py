@@ -96,7 +96,7 @@ def snapshot_public_api(root: Any) -> list[dict[str, Any]]:
             return
 
         for child in members.values():
-            if not getattr(child, "is_public", False):
+            if not is_public_member(child, parent_kind):
                 continue
 
             item = normalize_symbol(child, parent_kind)
@@ -119,6 +119,32 @@ def normalize_symbol(obj: Any, parent_kind: str) -> dict[str, Any]:
         "kind": kind,
         "parameters": parameters_for(obj, kind),
     }
+
+
+def is_public_member(obj: Any, parent_kind: str) -> bool:
+    name = member_name(obj)
+    parent = getattr(obj, "parent", None)
+    exports = getattr(parent, "exports", None) if parent_kind == "module" else None
+
+    if exports is not None:
+        return name in exports
+
+    if parent_kind == "class":
+        return not name.startswith("_") or is_dunder(name)
+
+    return not name.startswith("_")
+
+
+def member_name(obj: Any) -> str:
+    name = getattr(obj, "name", None)
+    if name:
+        return str(name)
+    path = getattr(obj, "path", "")
+    return str(path).split(".")[-1]
+
+
+def is_dunder(name: str) -> bool:
+    return len(name) > 4 and name.startswith("__") and name.endswith("__")
 
 
 def symbol_kind(obj: Any, parent_kind: str) -> str:
