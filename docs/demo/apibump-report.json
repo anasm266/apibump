@@ -1,0 +1,22 @@
+{
+  "schema_version": "0.1",
+  "recommendation": "major",
+  "summary": {
+    "breaking": 1,
+    "additive": 0,
+    "internal": 0,
+    "unknown": 0
+  },
+  "changes": [
+    {
+      "severity": "breaking",
+      "kind": "parameter_removed",
+      "symbol": "demo_pkg.api.create_user",
+      "file": "src/demo_pkg/api.py",
+      "line": 1,
+      "message": "src/demo_pkg/api.py:1: create_user(email): Parameter was removed",
+      "backend": "griffe"
+    }
+  ]
+}
+
