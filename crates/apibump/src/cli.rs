@@ -13,9 +13,7 @@ use crate::{
         run_python_backend, BreakingChange, ParameterSnapshot, PythonBackendOptions,
         PythonBackendResult, SymbolKind, SymbolSnapshot,
     },
-    config::{
-        load_config, ApibumpConfig, ConfigFailOn, ConfigPackage, IgnoreRule, SelectionMode,
-    },
+    config::{load_config, ApibumpConfig, ConfigFailOn, ConfigPackage, IgnoreRule, SelectionMode},
     discover::{
         discover_python_packages, git_changed_files, package_has_changed, select_changed_packages,
         DiscoveredPackage,
@@ -155,7 +153,10 @@ fn check(args: CheckArgs) -> anyhow::Result<u8> {
         .flat_map(|package| package.diagnostics.clone())
         .collect::<Vec<_>>();
     let report = ApiReport::from_packages(
-        evaluated.into_iter().map(|package| package.report).collect(),
+        evaluated
+            .into_iter()
+            .map(|package| package.report)
+            .collect(),
         diagnostics,
     );
 
@@ -245,7 +246,13 @@ fn resolve_packages(
 
     let candidates = discovered
         .iter()
-        .map(|candidate| format!("{} ({})", candidate.package, candidate.manifest_path.display()))
+        .map(|candidate| {
+            format!(
+                "{} ({})",
+                candidate.package,
+                candidate.manifest_path.display()
+            )
+        })
         .collect::<Vec<_>>()
         .join(", ");
     bail!(
@@ -463,7 +470,10 @@ fn classify_snapshot_changes(
         });
     }
 
-    for path in old_by_path.keys().filter(|path| new_by_path.contains_key(**path)) {
+    for path in old_by_path
+        .keys()
+        .filter(|path| new_by_path.contains_key(**path))
+    {
         if has_breaking_ancestor(path, breaking_paths) {
             continue;
         }
@@ -485,7 +495,10 @@ fn classify_snapshot_changes(
             continue;
         }
 
-        if matches!(new_symbol.kind, SymbolKind::Function | SymbolKind::Method | SymbolKind::Alias) {
+        if matches!(
+            new_symbol.kind,
+            SymbolKind::Function | SymbolKind::Method | SymbolKind::Alias
+        ) {
             changes.extend(classify_parameter_changes(
                 package,
                 &old_symbol.path,
@@ -625,7 +638,10 @@ fn has_breaking_ancestor(path: &str, breaking_paths: &BTreeSet<String>) -> bool 
 }
 
 fn ancestor_paths(path: &str) -> impl Iterator<Item = &str> {
-    let mut indices = path.match_indices('.').map(|(index, _)| index).collect::<Vec<_>>();
+    let mut indices = path
+        .match_indices('.')
+        .map(|(index, _)| index)
+        .collect::<Vec<_>>();
     indices.reverse();
     indices.into_iter().map(move |index| &path[..index])
 }
@@ -638,7 +654,10 @@ fn apply_ignore_rules(
     let mut suppressed = Vec::new();
 
     for change in changes {
-        if ignore_rules.iter().any(|rule| ignore_rule_matches(rule, &change)) {
+        if ignore_rules
+            .iter()
+            .any(|rule| ignore_rule_matches(rule, &change))
+        {
             suppressed.push(change);
         } else {
             active.push(change);
@@ -847,8 +866,11 @@ mod tests {
     fn resolve_packages_autodetects_single_candidate() {
         let repo = tempfile::tempdir().unwrap();
         std::fs::create_dir_all(repo.path().join("src/demo_pkg")).unwrap();
-        std::fs::write(repo.path().join("pyproject.toml"), "[project]\nname = \"demo-pkg\"\n")
-            .unwrap();
+        std::fs::write(
+            repo.path().join("pyproject.toml"),
+            "[project]\nname = \"demo-pkg\"\n",
+        )
+        .unwrap();
         std::fs::write(repo.path().join("src/demo_pkg/__init__.py"), "").unwrap();
 
         let args = CheckArgs {

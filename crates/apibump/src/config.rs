@@ -178,7 +178,11 @@ pub fn load_config(repo: &Path, explicit: Option<&Path>) -> anyhow::Result<Optio
     }))
 }
 
-fn normalize_rel_paths(base_dir: &Path, repo: &Path, paths: Vec<PathBuf>) -> anyhow::Result<Vec<PathBuf>> {
+fn normalize_rel_paths(
+    base_dir: &Path,
+    repo: &Path,
+    paths: Vec<PathBuf>,
+) -> anyhow::Result<Vec<PathBuf>> {
     paths
         .into_iter()
         .map(|path| normalize_rel_path(base_dir, repo, &path))
@@ -192,9 +196,13 @@ pub fn normalize_rel_path(base_dir: &Path, repo: &Path, path: &Path) -> anyhow::
         base_dir.join(path)
     };
 
-    let normalized = absolute
-        .strip_prefix(repo)
-        .with_context(|| format!("path {} is outside repo {}", absolute.display(), repo.display()))?;
+    let normalized = absolute.strip_prefix(repo).with_context(|| {
+        format!(
+            "path {} is outside repo {}",
+            absolute.display(),
+            repo.display()
+        )
+    })?;
 
     Ok(normalized.components().collect())
 }

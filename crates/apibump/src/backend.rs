@@ -104,7 +104,9 @@ pub struct BreakingChange {
     pub backend: String,
 }
 
-pub fn run_python_backend(options: &PythonBackendOptions) -> Result<PythonBackendResult, BackendError> {
+pub fn run_python_backend(
+    options: &PythonBackendOptions,
+) -> Result<PythonBackendResult, BackendError> {
     let _ = options.strict;
 
     if let Some(fake_path) = env::var("APIBUMP_FAKE_BACKEND_JSON").ok() {

@@ -60,7 +60,9 @@ pub fn discover_python_packages(repo: &Path) -> anyhow::Result<Vec<DiscoveredPac
         };
 
         for import_name in project_import_names(project) {
-            if let Some(package) = resolve_candidate(repo, manifest_path, manifest_dir, &import_name)? {
+            if let Some(package) =
+                resolve_candidate(repo, manifest_path, manifest_dir, &import_name)?
+            {
                 packages.push(package);
             }
         }
@@ -178,7 +180,10 @@ fn resolve_candidate(
     let layouts = [
         (
             manifest_dir.join("src"),
-            manifest_dir.join("src").join(import_name).join("__init__.py"),
+            manifest_dir
+                .join("src")
+                .join(import_name)
+                .join("__init__.py"),
         ),
         (
             manifest_dir.to_path_buf(),
@@ -192,7 +197,10 @@ fn resolve_candidate(
         }
 
         let search = vec![repo_relative(repo, &search_dir)?];
-        let roots = vec![repo_relative(repo, init_file.parent().unwrap_or(&search_dir))?];
+        let roots = vec![repo_relative(
+            repo,
+            init_file.parent().unwrap_or(&search_dir),
+        )?];
         return Ok(Some(DiscoveredPackage {
             package: import_name.to_string(),
             search,

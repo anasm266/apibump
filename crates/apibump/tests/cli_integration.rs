@@ -111,4 +111,4 @@ fn autodetects_changed_package_in_a_monorepo() {
     assert_eq!(report["packages"].as_array().unwrap().len(), 1);
     assert_eq!(report["packages"][0]["package"], "payments");
     assert_eq!(report["summary"]["additive"], 2);
-  }
+}
