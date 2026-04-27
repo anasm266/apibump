@@ -1,0 +1,10 @@
+target/
+.venv/
+*.pyc
+__pycache__/
+.pytest_cache/
+.ruff_cache/
+.DS_Store
+apibump-report.json
+apibump-report.md
+

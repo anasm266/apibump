@@ -1,0 +1,99 @@
+name: ApiBump
+description: Detect public API breakages and recommend SemVer bumps.
+author: ApiBump
+
+inputs:
+  language:
+    description: Language backend to run. V1 supports python.
+    required: false
+    default: python
+  package:
+    description: Python package/module name to check.
+    required: true
+  search:
+    description: Search path passed to Griffe, usually src or .
+    required: false
+    default: "."
+  base:
+    description: Older git ref to compare from.
+    required: true
+  head:
+    description: Newer git ref to compare to.
+    required: false
+    default: HEAD
+  fail-on:
+    description: Failure policy: breaking, unknown, or never.
+    required: false
+    default: breaking
+  comment:
+    description: Post or update a sticky PR comment.
+    required: false
+    default: "true"
+  github-token:
+    description: Token used for PR comments.
+    required: false
+    default: ""
+  format:
+    description: Log output format: human, json, markdown, or github.
+    required: false
+    default: github
+
+outputs:
+  recommendation:
+    description: Recommended SemVer bump.
+    value: ${{ steps.run.outputs.recommendation }}
+  breaking:
+    description: Number of breaking changes.
+    value: ${{ steps.run.outputs.breaking }}
+  unknown:
+    description: Number of unknown changes.
+    value: ${{ steps.run.outputs.unknown }}
+  json-file:
+    description: Path to the JSON report on the runner.
+    value: ${{ steps.run.outputs.json_file }}
+  markdown-file:
+    description: Path to the Markdown report on the runner.
+    value: ${{ steps.run.outputs.markdown_file }}
+  exit-code:
+    description: ApiBump CLI exit code after applying the failure policy.
+    value: ${{ steps.run.outputs.exit_code }}
+
+runs:
+  using: composite
+  steps:
+    - name: Setup Rust
+      uses: dtolnay/rust-toolchain@stable
+
+    - name: Setup uv
+      uses: astral-sh/setup-uv@v6
+
+    - name: Install ApiBump
+      shell: bash
+      run: cargo install --path "$GITHUB_ACTION_PATH/crates/apibump" --locked --force
+
+    - name: Run ApiBump
+      id: run
+      shell: bash
+      env:
+        INPUT_LANGUAGE: ${{ inputs.language }}
+        INPUT_PACKAGE: ${{ inputs.package }}
+        INPUT_SEARCH: ${{ inputs.search }}
+        INPUT_BASE: ${{ inputs.base }}
+        INPUT_HEAD: ${{ inputs.head }}
+        INPUT_FAIL_ON: ${{ inputs.fail-on }}
+        INPUT_FORMAT: ${{ inputs.format }}
+      run: bash "$GITHUB_ACTION_PATH/scripts/action-run.sh"
+
+    - name: Comment on PR
+      if: ${{ inputs.comment == 'true' && github.event_name == 'pull_request' }}
+      shell: bash
+      env:
+        GH_TOKEN: ${{ inputs.github-token || github.token }}
+        PR_NUMBER: ${{ github.event.pull_request.number }}
+        COMMENT_FILE: ${{ steps.run.outputs.markdown_file }}
+      run: bash "$GITHUB_ACTION_PATH/scripts/comment-pr.sh"
+
+    - name: Apply failure policy
+      if: ${{ steps.run.outputs.exit_code != '0' }}
+      shell: bash
+      run: exit "${{ steps.run.outputs.exit_code }}"
