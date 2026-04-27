@@ -122,7 +122,7 @@ def normalize_symbol(obj: Any, parent_kind: str) -> dict[str, Any]:
 
 
 def symbol_kind(obj: Any, parent_kind: str) -> str:
-    underlying_kind = snake_case(str(getattr(obj, "kind", "")))
+    underlying_kind = normalize_enum_kind(getattr(obj, "kind", None))
     is_alias = bool(getattr(obj, "is_alias", False))
 
     if underlying_kind == "function" and parent_kind in {"class", "alias"}:
@@ -169,6 +169,13 @@ def enum_value(value: Any) -> str | None:
     if value is None:
         return None
     return getattr(value, "value", None) or str(value)
+
+
+def normalize_enum_kind(value: Any) -> str:
+    normalized = enum_value(value)
+    if normalized:
+        return snake_case(str(normalized))
+    return ""
 
 
 def symbol_for(obj: Any, data: dict[str, Any]) -> str:
