@@ -12,12 +12,20 @@ inputs:
     required: false
     default: python
   package:
-    description: "Python package/module name to check."
-    required: true
-  search:
-    description: "Search path passed to Griffe, usually src or ."
+    description: "Python package/module name to check. Optional when autodetect or config can resolve it."
     required: false
-    default: "."
+  search:
+    description: "Search path passed to Griffe, usually src or . Optional when autodetect or config can resolve it."
+    required: false
+    default: ""
+  config:
+    description: "Optional apibump.toml path relative to the repository root."
+    required: false
+    default: ""
+  all-packages:
+    description: "Check all configured or detected packages instead of only changed ones."
+    required: false
+    default: "false"
   base:
     description: "Older git ref to compare from."
     required: true
@@ -85,6 +93,8 @@ runs:
         INPUT_LANGUAGE: ${{ inputs.language }}
         INPUT_PACKAGE: ${{ inputs.package }}
         INPUT_SEARCH: ${{ inputs.search }}
+        INPUT_CONFIG: ${{ inputs.config }}
+        INPUT_ALL_PACKAGES: ${{ inputs.all-packages }}
         INPUT_BASE: ${{ inputs.base }}
         INPUT_HEAD: ${{ inputs.head }}
         INPUT_FAIL_ON: ${{ inputs.fail-on }}

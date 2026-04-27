@@ -35,13 +35,11 @@ jobs:
 
       - uses: anasm266/apibump@v1
         with:
-          package: my_pkg
-          search: src
           base: ${{ github.event.pull_request.base.sha }}
           head: ${{ github.sha }}
 ```
 
-ApiBump writes a job summary, annotates the workflow, and updates one sticky PR comment.
+If the repo has one obvious Python package, ApiBump autodetects it. ApiBump writes a job summary, annotates the workflow, and updates one sticky PR comment.
 
 ## Local Usage
 
@@ -61,29 +59,56 @@ Run a check:
 
 ```bash
 apibump check \
-  --language python \
-  --package my_pkg \
-  --search src \
   --base origin/main \
   --head HEAD \
   --format markdown \
   --fail-on breaking
 ```
 
+When autodetect is ambiguous, pass `--package` and `--search` explicitly or add `apibump.toml`.
+
 Stable JSON output is available with `--format json`:
 
 ```json
 {
-  "schema_version": "0.1",
+  "schema_version": "0.2",
   "recommendation": "major",
   "summary": {
     "breaking": 1,
     "additive": 0,
     "internal": 0,
-    "unknown": 0
+    "unknown": 0,
+    "suppressed": 0
   },
+  "packages": [
+    {
+      "package": "my_pkg",
+      "recommendation": "major",
+      "summary": {
+        "breaking": 1,
+        "additive": 0,
+        "internal": 0,
+        "unknown": 0,
+        "suppressed": 0
+      },
+      "changes": [
+        {
+          "package": "my_pkg",
+          "severity": "breaking",
+          "kind": "parameter_removed",
+          "symbol": "my_pkg.api.create_user",
+          "file": "src/my_pkg/api.py",
+          "line": 42,
+          "message": "Parameter was removed",
+          "backend": "griffe"
+        }
+      ],
+      "suppressed_changes": []
+    }
+  ],
   "changes": [
     {
+      "package": "my_pkg",
       "severity": "breaking",
       "kind": "parameter_removed",
       "symbol": "my_pkg.api.create_user",
@@ -92,7 +117,8 @@ Stable JSON output is available with `--format json`:
       "message": "Parameter was removed",
       "backend": "griffe"
     }
-  ]
+  ],
+  "suppressed_changes": []
 }
 ```
 
@@ -120,9 +146,6 @@ jobs:
 
       - uses: anasm266/apibump@v1
         with:
-          language: python
-          package: my_pkg
-          search: src
           base: ${{ github.event.pull_request.base.sha }}
           head: ${{ github.sha }}
           comment: true
@@ -140,6 +163,42 @@ The `fixtures/python-breaking` example shows the core workflow:
 
 See [docs/demo/apibump-report.json](docs/demo/apibump-report.json) and [docs/demo/apibump-report.md](docs/demo/apibump-report.md) for the expected output shape.
 
+## Monorepo Config
+
+Use `apibump.toml` when a repo contains multiple Python packages:
+
+```toml
+version = 1
+
+[defaults]
+selection = "changed"
+fail_on = "breaking"
+
+[[packages]]
+package = "payments"
+search = ["services/payments/src"]
+roots = ["services/payments/src/payments"]
+
+[[packages]]
+package = "analytics"
+search = ["services/analytics/src"]
+roots = ["services/analytics/src/analytics"]
+```
+
+See [docs/configuration.md](docs/configuration.md) for config details and [docs/why-not-griffe.md](docs/why-not-griffe.md) for the positioning.
+
+## Why Not Griffe Directly?
+
+Griffe is the Python API loader and breaking-change checker that powers ApiBump. ApiBump adds:
+
+- repo-level package autodetection
+- monorepo package selection
+- conservative additive classification for `minor` recommendations
+- suppression rules through `apibump.toml`
+- GitHub Action and PR-native reporting
+
+If you already want a low-level Python API engine, use Griffe directly. If you want PR-level SemVer guidance for a repo, use ApiBump.
+
 ## Exit Codes
 
 - `0`: check completed and did not violate the configured `--fail-on` policy.
@@ -150,4 +209,4 @@ By default, backend failures become an `unknown` report and do not fail `--fail-
 
 ## Scope
 
-ApiBump currently supports Python only. It does not yet detect additive Python API changes, so Python reports are either `major`, `patch`, or `unknown`. Future language adapters should normalize their findings into the same JSON schema.
+ApiBump currently supports Python only. Python additive detection is intentionally conservative: clear public additions become `minor`, breakages become `major`, and ambiguous non-breaking changes become `unknown`. Future language adapters should normalize their findings into the same JSON schema.

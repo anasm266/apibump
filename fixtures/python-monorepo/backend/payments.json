@@ -1,0 +1,59 @@
+{
+  "breaking_changes": [],
+  "old_snapshot": [
+    {
+      "path": "payments.create_charge",
+      "parent_path": "payments",
+      "kind": "alias",
+      "parameters": [
+        {"name": "amount", "kind": "ParameterKind.positional_or_keyword", "required": true},
+        {"name": "currency", "kind": "ParameterKind.positional_or_keyword", "required": true}
+      ]
+    },
+    {
+      "path": "payments.api",
+      "parent_path": "payments",
+      "kind": "module",
+      "parameters": []
+    },
+    {
+      "path": "payments.api.create_charge",
+      "parent_path": "payments.api",
+      "kind": "function",
+      "parameters": [
+        {"name": "amount", "kind": "ParameterKind.positional_or_keyword", "required": true},
+        {"name": "currency", "kind": "ParameterKind.positional_or_keyword", "required": true}
+      ]
+    }
+  ],
+  "new_snapshot": [
+    {
+      "path": "payments.create_charge",
+      "parent_path": "payments",
+      "kind": "alias",
+      "parameters": [
+        {"name": "amount", "kind": "ParameterKind.positional_or_keyword", "required": true},
+        {"name": "currency", "kind": "ParameterKind.positional_or_keyword", "required": true},
+        {"name": "metadata", "kind": "ParameterKind.keyword_only", "required": false}
+      ]
+    },
+    {
+      "path": "payments.api",
+      "parent_path": "payments",
+      "kind": "module",
+      "parameters": []
+    },
+    {
+      "path": "payments.api.create_charge",
+      "parent_path": "payments.api",
+      "kind": "function",
+      "parameters": [
+        {"name": "amount", "kind": "ParameterKind.positional_or_keyword", "required": true},
+        {"name": "currency", "kind": "ParameterKind.positional_or_keyword", "required": true},
+        {"name": "metadata", "kind": "ParameterKind.keyword_only", "required": false}
+      ]
+    }
+  ],
+  "diagnostics": []
+}
+

@@ -1,14 +1,42 @@
 {
-  "schema_version": "0.1",
+  "schema_version": "0.2",
   "recommendation": "major",
   "summary": {
     "breaking": 1,
     "additive": 0,
     "internal": 0,
-    "unknown": 0
+    "unknown": 0,
+    "suppressed": 0
   },
+  "packages": [
+    {
+      "package": "demo_pkg",
+      "recommendation": "major",
+      "summary": {
+        "breaking": 1,
+        "additive": 0,
+        "internal": 0,
+        "unknown": 0,
+        "suppressed": 0
+      },
+      "changes": [
+        {
+          "package": "demo_pkg",
+          "severity": "breaking",
+          "kind": "parameter_removed",
+          "symbol": "demo_pkg.api.create_user",
+          "file": "src/demo_pkg/api.py",
+          "line": 1,
+          "message": "src/demo_pkg/api.py:1: create_user(email): Parameter was removed",
+          "backend": "griffe"
+        }
+      ],
+      "suppressed_changes": []
+    }
+  ],
   "changes": [
     {
+      "package": "demo_pkg",
       "severity": "breaking",
       "kind": "parameter_removed",
       "symbol": "demo_pkg.api.create_user",
@@ -17,6 +45,6 @@
       "message": "src/demo_pkg/api.py:1: create_user(email): Parameter was removed",
       "backend": "griffe"
     }
-  ]
+  ],
+  "suppressed_changes": []
 }
-

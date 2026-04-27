@@ -107,6 +107,10 @@ pub struct BreakingChange {
 pub fn run_python_backend(options: &PythonBackendOptions) -> Result<PythonBackendResult, BackendError> {
     let _ = options.strict;
 
+    if let Some(fake_path) = env::var("APIBUMP_FAKE_BACKEND_JSON").ok() {
+        return load_fake_backend(Path::new(&fake_path), &options.package);
+    }
+
     let bridge_dir = tempfile::tempdir().map_err(BackendError::BridgeTemp)?;
     let bridge_path = bridge_dir.path().join("griffe_bridge.py");
     fs::write(&bridge_path, GRIFFE_BRIDGE).map_err(BackendError::BridgeWrite)?;
@@ -185,6 +189,34 @@ fn default_python_command() -> String {
 
 fn default_griffe_backend() -> String {
     "griffe".to_string()
+}
+
+fn load_fake_backend(root: &Path, package: &str) -> Result<PythonBackendResult, BackendError> {
+    let path = if root.is_dir() {
+        root.join(format!("{package}.json"))
+    } else {
+        root.to_path_buf()
+    };
+    let bytes = fs::read(&path).map_err(BackendError::BridgeWrite)?;
+    let bridge_report: BridgeReport =
+        serde_json::from_slice(&bytes).map_err(BackendError::InvalidJson)?;
+    Ok(PythonBackendResult {
+        breaking_changes: bridge_report
+            .breaking_changes
+            .into_iter()
+            .map(|change| BreakingChange {
+                kind: change.kind,
+                symbol: change.symbol,
+                file: change.file,
+                line: change.line,
+                message: change.message,
+                backend: change.backend,
+            })
+            .collect(),
+        old_snapshot: bridge_report.old_snapshot,
+        new_snapshot: bridge_report.new_snapshot,
+        diagnostics: bridge_report.diagnostics,
+    })
 }
 
 #[cfg(test)]

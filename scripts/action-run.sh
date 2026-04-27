@@ -18,7 +18,6 @@ uv pip install --python "$python_bin" "griffe>=1,<2"
 args=(
   check
   --language "${INPUT_LANGUAGE:-python}"
-  --package "$INPUT_PACKAGE"
   --base "$INPUT_BASE"
   --head "${INPUT_HEAD:-HEAD}"
   --format "${INPUT_FORMAT:-github}"
@@ -28,11 +27,24 @@ args=(
   --markdown-output "$markdown_file"
 )
 
-search_value="${INPUT_SEARCH:-.}"
-search_value="${search_value//,/ }"
-for search_path in $search_value; do
-  args+=(--search "$search_path")
-done
+if [[ -n "${INPUT_PACKAGE:-}" ]]; then
+  args+=(--package "$INPUT_PACKAGE")
+fi
+
+if [[ -n "${INPUT_CONFIG:-}" ]]; then
+  args+=(--config "$INPUT_CONFIG")
+fi
+
+if [[ "${INPUT_ALL_PACKAGES:-false}" == "true" ]]; then
+  args+=(--all-packages)
+fi
+
+if [[ -n "${INPUT_SEARCH:-}" ]]; then
+  search_value="${INPUT_SEARCH//,/ }"
+  for search_path in $search_value; do
+    args+=(--search "$search_path")
+  done
+fi
 
 set +e
 APIBUMP_PYTHON="$python_bin" apibump "${args[@]}"

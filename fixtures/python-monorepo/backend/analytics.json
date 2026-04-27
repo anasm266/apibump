@@ -1,0 +1,25 @@
+{
+  "breaking_changes": [],
+  "old_snapshot": [
+    {
+      "path": "analytics.track_event",
+      "parent_path": "analytics",
+      "kind": "alias",
+      "parameters": [
+        {"name": "name", "kind": "ParameterKind.positional_or_keyword", "required": true}
+      ]
+    }
+  ],
+  "new_snapshot": [
+    {
+      "path": "analytics.track_event",
+      "parent_path": "analytics",
+      "kind": "alias",
+      "parameters": [
+        {"name": "name", "kind": "ParameterKind.positional_or_keyword", "required": true}
+      ]
+    }
+  ],
+  "diagnostics": []
+}
+
